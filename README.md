@@ -1,9 +1,15 @@
 # Clusters Control Plane
 
-A modern, multi-cloud cluster management platform designed for organization-based multi-tenancy. This platform allows administrators to manage Kubernetes clusters across various providers (AWS, Azure, GCP, On-Prem) with isolated environments for different clients.
+<div align="center">
+
+![Clusters Architecture](./architecture.jpg)
 
 ![Project Status](https://img.shields.io/badge/status-active-success.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+A modern, multi-cloud cluster management platform designed for organization-based multi-tenancy. This platform allows administrators to manage Kubernetes clusters across various providers (AWS, Azure, GCP, On-Prem) with isolated environments for different clients.
+
+</div>
 
 ## 🚀 Features
 
@@ -16,67 +22,31 @@ A modern, multi-cloud cluster management platform designed for organization-base
 
 ## 🏗 Architecture
 
-```mermaid
-graph TD
-    User((User / Admin))
-
-    subgraph "Frontend Layer"
-        Next[Next.js Web App]
-    end
-
-    subgraph "Backend Layer"
-        API[Express.js API]
-    end
-
-    subgraph "Data Layer"
-        DB[(PostgreSQL)]
-    end
-
-    subgraph "Infrastructure Layer"
-        direction LR
-        AWS[AWS]
-        Azure[Azure]
-        GCP[GCP]
-        OnPrem[On-Prem]
-    end
-
-    User -->|HTTPS| Next
-    Next -->|API Requests| API
-    API -->|Read/Write| DB
-    API -.->|Provisioning| AWS
-    API -.->|Provisioning| Azure
-    API -.->|Provisioning| GCP
-    API -.->|Provisioning| OnPrem
-
-    style User fill:#f9f,stroke:#333,stroke-width:2px
-    style Next fill:#61dafb,stroke:#333
-    style API fill:#68a063,stroke:#333
-    style DB fill:#336791,stroke:#333
-```
+(See project overview above)
 
 ## 🛠 Tech Stack
 
-**Frontend (apps/web)**
+### Frontend (apps/web)
 
 - **Framework**: [Next.js 14](https://nextjs.org/) (App Router)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
 - **Components**: Custom UI library with [Lucide React](https://lucide.dev/) icons
 - **Animations**: [Framer Motion](https://www.framer.com/motion/)
 
-**Backend (apps/api)**
+### Backend (apps/api)
 
 - **Runtime**: [Node.js](https://nodejs.org/)
 - **Server**: Express.js
 - **Database**: PostgreSQL (managed via `pg` driver)
 - **Architecture**: Service-based architecture with separated concerns
 
-**Shared (packages/common)**
+### Shared (packages/common)
 
 - **Types**: Shared TypeScript interfaces/types for consistent data models across frontend and backend.
 
 ## 📂 Project Structure
 
-```
+```text
 clusters/
 ├── apps/
 │   ├── web/                 # Next.js Frontend Application
