@@ -14,6 +14,46 @@ A modern, multi-cloud cluster management platform designed for organization-base
 - **Modern UI**: Responsive, dark-mode enabled dashboard built with Next.js and Tailwind CSS.
 - **Real-time Updates**: Status monitoring for cluster provisioning and health.
 
+## 🏗 Architecture
+
+```mermaid
+graph TD
+    User((User / Admin))
+
+    subgraph "Frontend Layer"
+        Next[Next.js Web App]
+    end
+
+    subgraph "Backend Layer"
+        API[Express.js API]
+    end
+
+    subgraph "Data Layer"
+        DB[(PostgreSQL)]
+    end
+
+    subgraph "Infrastructure Layer"
+        direction LR
+        AWS[AWS]
+        Azure[Azure]
+        GCP[GCP]
+        OnPrem[On-Prem]
+    end
+
+    User -->|HTTPS| Next
+    Next -->|API Requests| API
+    API -->|Read/Write| DB
+    API -.->|Provisioning| AWS
+    API -.->|Provisioning| Azure
+    API -.->|Provisioning| GCP
+    API -.->|Provisioning| OnPrem
+
+    style User fill:#f9f,stroke:#333,stroke-width:2px
+    style Next fill:#61dafb,stroke:#333
+    style API fill:#68a063,stroke:#333
+    style DB fill:#336791,stroke:#333
+```
+
 ## 🛠 Tech Stack
 
 **Frontend (apps/web)**
