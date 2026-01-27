@@ -1,0 +1,39 @@
+{
+  "name": "clusters-api",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ec2": "^3.976.0",
+    "@aws-sdk/client-ssm": "^3.975.0",
+    "@aws-sdk/client-sts": "^3.975.0",
+    "@azure/arm-compute": "^23.3.0",
+    "@azure/arm-network": "^35.0.0",
+    "@azure/arm-resources": "^7.0.0",
+    "@azure/identity": "^4.13.0",
+    "@clusters/common": "^1.0.0",
+    "@google-cloud/compute": "^6.7.0",
+    "@types/morgan": "^1.9.10",
+    "cors": "^2.8.5",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.1",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.5",
+    "@types/pg": "^8.10.9",
+    "@types/uuid": "^10.0.0",
+    "nodemon": "^3.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
