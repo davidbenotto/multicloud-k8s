@@ -7,10 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "db:start": "docker start clusters-db 2>/dev/null || docker compose -f docker/docker-compose.yml up -d postgres",
-    "db:stop": "docker stop clusters-db",
+    "db:start": "docker compose -f docker/docker-compose.yml up -d",
+    "db:stop": "docker compose -f docker/docker-compose.yml down",
     "predev": "npm run db:start",
-    "dev": "concurrently \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "dev": "concurrently --names \"API,WEB\" --prefix-colors \"blue,magenta\" \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
     "build": "npm run build --workspaces"
   },
   "devDependencies": {

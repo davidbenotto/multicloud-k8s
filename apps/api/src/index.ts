@@ -1,26 +1,28 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import dotenv from "dotenv";
+
 import { db } from "./services/database";
 import { provisioner } from "./services/provisioner";
 import { credentialService } from "./services/credentials";
 import { organizationService } from "./services/organizations";
 import morgan from "morgan";
-
-dotenv.config();
+import { env } from "./utils/validate-env";
+import { logger } from "./utils/logger";
 
 const app = express();
-const PORT = process.env.PORT || 3333;
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const PORT = env.PORT;
+const FRONTEND_URL = env.FRONTEND_URL;
 
 // Admin emails that can access all organizations
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "")
-  .split(",")
-  .filter(Boolean);
+const ADMIN_EMAILS = (env.ADMIN_EMAILS || "").split(",").filter(Boolean);
 
 app.use(helmet());
-app.use(morgan("dev"));
+app.use(
+  morgan("combined", {
+    stream: { write: (message) => logger.info(message.trim()) },
+  }),
+);
 app.use(
   cors({
     origin: FRONTEND_URL,
@@ -37,16 +39,11 @@ const getOrgContext = (req: express.Request) => {
   return { orgId, isAdmin };
 };
 
-console.log(
-  "[Current Config] AWS:",
-  !!process.env.AWS_ACCESS_KEY_ID,
-  "| Azure:",
-  !!process.env.AZURE_CLIENT_ID,
+logger.info(
+  `[Current Config] AWS: ${!!env.AWS_ACCESS_KEY_ID} | Azure: ${!!env.AZURE_CLIENT_ID}`,
 );
-console.log(
-  "[Current Config] Using .env credentials:",
-  process.env.USE_PRECONFIGURED_CREDENTIALS,
-);
+// Use preconfigured credentials if env vars are present (logic handled in services usually, just logging here)
+logger.info("[Current Config] Environment validation successful");
 
 // --- Organization Routes ---
 
@@ -82,7 +79,7 @@ app.get("/organizations/:id", async (req, res) => {
     }
     res.json(org);
   } catch (error) {
-    console.error("Error fetching organization:", error);
+    logger.error("Error fetching organization:", error);
     res.status(500).json({ error: "Failed to fetch organization" });
   }
 });
@@ -99,7 +96,7 @@ app.post("/organizations", async (req, res) => {
     const org = await organizationService.create({ name, slug, description });
     res.status(201).json(org);
   } catch (error: any) {
-    console.error("Error creating organization:", error);
+    logger.error("Error creating organization:", error);
     if (error.code === "23505") {
       // Unique violation
       return res
@@ -123,7 +120,7 @@ app.put("/organizations/:id", async (req, res) => {
     });
     res.json(org);
   } catch (error: any) {
-    console.error("Error updating organization:", error);
+    logger.error("Error updating organization:", error);
     res
       .status(500)
       .json({ error: error.message || "Failed to update organization" });
@@ -136,7 +133,7 @@ app.delete("/organizations/:id", async (req, res) => {
     await organizationService.delete(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Error deleting organization:", error);
+    logger.error("Error deleting organization:", error);
     res
       .status(400)
       .json({ error: error.message || "Failed to delete organization" });
@@ -252,7 +249,7 @@ app.get("/clusters", async (req, res) => {
     const result = await db.query(query, params);
     res.json(result.rows);
   } catch (error) {
-    console.error("Error fetching clusters:", error);
+    logger.error("Error fetching clusters:", error);
     res.status(500).json({ error: "Failed to fetch clusters" });
   }
 });
@@ -305,19 +302,19 @@ app.post("/clusters", async (req, res) => {
     );
 
     if (!credentials) {
-      console.warn(
+      logger.warn(
         `[API] No credentials found for ${config.provider} in org ${organizationId}`,
       );
     }
 
-    console.log(
+    logger.info(
       `[API] Triggering provisioning for cluster ${newCluster.id} (org: ${organizationId}) with credentials: ${credentials ? Object.keys(credentials).join(", ") : "none"}`,
     );
     provisioner.provisionCluster(newCluster, credentials || {});
 
     res.json(newCluster);
   } catch (error) {
-    console.error("Error creating cluster:", error);
+    logger.error("Error creating cluster:", error);
     res.status(500).json({ error: "Failed to create cluster" });
   }
 });
@@ -346,12 +343,12 @@ app.delete("/clusters/:id", async (req, res) => {
     await provisioner.destroyCluster(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Error destroying cluster:", error);
+    logger.error("Error destroying cluster:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.listen(PORT, async () => {
-  console.log(`🚀 Control Plane running on http://localhost:${PORT}`);
+  logger.info(`🚀 Control Plane running on http://localhost:${PORT}`);
   await db.initSchema();
 });
