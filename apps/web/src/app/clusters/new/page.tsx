@@ -19,6 +19,26 @@ import { PROVIDERS, REGIONS, CREDENTIAL_FIELDS } from "@/lib/constants";
 
 type Step = "provider" | "credentials" | "config";
 
+const INSTANCE_TYPES: Record<string, { value: string; label: string }[]> = {
+  aws: [
+    { value: "t3.small", label: "t3.small (2 vCPU, 2GB)" },
+    { value: "t3.medium", label: "t3.medium (2 vCPU, 4GB)" },
+    { value: "t3.large", label: "t3.large (2 vCPU, 8GB)" },
+    { value: "m5.large", label: "m5.large (2 vCPU, 8GB)" },
+  ],
+  azure: [
+    { value: "Standard_B2s", label: "Standard_B2s (2 vCPU, 4GB)" },
+    { value: "Standard_D2s_v3", label: "Standard_D2s_v3 (2 vCPU, 8GB)" },
+    { value: "Standard_B4ms", label: "Standard_B4ms (4 vCPU, 16GB)" },
+  ],
+  gcp: [
+    { value: "e2-medium", label: "e2-medium (2 vCPU, 4GB)" },
+    { value: "e2-standard-2", label: "e2-standard-2 (2 vCPU, 8GB)" },
+    { value: "n2-standard-4", label: "n2-standard-4 (4 vCPU, 16GB)" },
+  ],
+  onprem: [{ value: "generic", label: "Generic / Virtual Machine" }],
+};
+
 export default function NewClusterPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -40,6 +60,8 @@ export default function NewClusterPage() {
     provider: "",
     region: "",
     nodeCount: 3,
+    instanceType: "",
+    tags: "",
   });
 
   // Check credentials when provider changes
@@ -54,6 +76,7 @@ export default function NewClusterPage() {
       ...formData,
       provider: providerId,
       region: REGIONS[providerId]?.[0]?.id || "",
+      instanceType: INSTANCE_TYPES[providerId]?.[0]?.value || "",
     });
     setStep("credentials");
   };
@@ -370,11 +393,25 @@ export default function NewClusterPage() {
                       }))}
                     />
 
+                    <Select
+                      label="Instance Type"
+                      placeholder="Select instance size"
+                      required
+                      value={formData.instanceType}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          instanceType: e.target.value,
+                        })
+                      }
+                      options={INSTANCE_TYPES[formData.provider] || []}
+                    />
+
                     <Input
                       label="Node Count"
                       type="number"
                       min={1}
-                      max={20}
+                      max={5}
                       required
                       value={formData.nodeCount.toString()}
                       onChange={(e) =>
@@ -384,6 +421,20 @@ export default function NewClusterPage() {
                         })
                       }
                     />
+
+                    <div className="md:col-span-2">
+                      <Input
+                        label="Tags (Optional)"
+                        placeholder="Environment=Production, Project=Alpha"
+                        value={formData.tags}
+                        onChange={(e) =>
+                          setFormData({ ...formData, tags: e.target.value })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Comma-separated key=value pairs
+                      </p>
+                    </div>
                   </div>
 
                   <div className="flex justify-between pt-4 border-t border-border">

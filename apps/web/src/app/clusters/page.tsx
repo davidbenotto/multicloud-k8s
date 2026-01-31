@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  Download,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout";
 import {
@@ -202,6 +203,21 @@ export default function ClustersPage() {
                         <StatusIcon size={14} />
                         <span className="capitalize">{cluster.status}</span>
                       </div>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Download Kubeconfig"
+                        onClick={() => {
+                          window.open(
+                            `http://localhost:3333/api/clusters/${cluster.id}/kubeconfig`,
+                            "_blank",
+                          );
+                        }}
+                        className="text-muted-foreground hover:text-primary"
+                      >
+                        <Download size={18} />
+                      </Button>
 
                       <Button
                         variant="ghost"

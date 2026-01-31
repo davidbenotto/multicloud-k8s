@@ -3,6 +3,8 @@ import { NetworkManagementClient } from "@azure/arm-network";
 import { ResourceManagementClient } from "@azure/arm-resources";
 import { ClientSecretCredential } from "@azure/identity";
 import { v4 as uuidv4 } from "uuid";
+import { ClusterProvider, ProvisioningResult } from "./cluster-provider";
+import { ClusterConfig } from "../provisioner";
 
 interface AzureConfig {
   subscriptionId: string;
@@ -12,7 +14,7 @@ interface AzureConfig {
   location?: string;
 }
 
-export class AzureProvisionerService {
+export class AzureProvider implements ClusterProvider {
   private credential: ClientSecretCredential;
   private subscriptionId: string;
   private location: string;
@@ -40,7 +42,15 @@ export class AzureProvisionerService {
     });
   }
 
-  async deployClusterNodes(name: string, nodeCount: number = 2) {
+  async deploy(
+    config: ClusterConfig & { name: string },
+  ): Promise<ProvisioningResult> {
+    const {
+      name,
+      nodeCount = 2,
+      instanceType: vmSize = "Standard_B1s",
+      tags: customTags = {},
+    } = config;
     const deploymentId = uuidv4();
     const networkClient = new NetworkManagementClient(
       this.credential,
@@ -95,14 +105,14 @@ export class AzureProvisionerService {
             },
           );
 
-        console.log(`[Azure] Creating VM ${nodeName}...`);
+        console.log(`[Azure] Creating VM ${nodeName} (${vmSize})...`);
         const vm =
           await computeClient.virtualMachines.beginCreateOrUpdateAndWait(
             this.resourceGroup,
             nodeName,
             {
               location: this.location,
-              hardwareProfile: { vmSize: "Standard_B1s" },
+              hardwareProfile: { vmSize },
               storageProfile: {
                 imageReference: {
                   publisher: "Canonical",
@@ -127,6 +137,7 @@ export class AzureProvisionerService {
               tags: {
                 DeploymentId: deploymentId,
                 ManagedBy: "clusters-control-plane",
+                ...customTags,
               },
             },
           );
@@ -152,8 +163,8 @@ export class AzureProvisionerService {
     }
   }
 
-  async destroyCluster(deploymentId: string) {
-    if (!deploymentId) return;
+  async destroy(deploymentId: string) {
+    if (!deploymentId) return { success: false, error: "No ID" };
 
     console.log(`[Azure] Destroying resources for ${deploymentId}...`);
     const resourceClient = new ResourceManagementClient(
@@ -189,5 +200,9 @@ export class AzureProvisionerService {
       console.error("[Azure] Destroy failed:", error);
       throw new Error(`Azure Destroy Failed: ${error.message}`);
     }
+  }
+
+  async getKubeconfig(provisioningResult: ProvisioningResult): Promise<string> {
+    throw new Error("Azure Kubeconfig retrieval not implemented in MVP yet.");
   }
 }

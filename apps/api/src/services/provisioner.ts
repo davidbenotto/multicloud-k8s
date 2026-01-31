@@ -3,11 +3,68 @@ export interface ClusterConfig {
   name: string;
   region?: string;
   nodeCount?: number;
+  instanceType?: string;
+  tags?: Record<string, string>;
 }
 
 import { db } from "./database";
+import { ClusterProvider } from "./providers/cluster-provider";
 
 export const provisioner = {
+  /**
+   * Factory to get the correct provider instance
+   */
+  async getProvider(
+    providerName: string,
+    credentials: any,
+    region?: string,
+  ): Promise<ClusterProvider> {
+    if (providerName === "aws") {
+      const { AWSProvider } = await import("./providers/aws-provider");
+      return new AWSProvider({
+        region: region || "us-east-1",
+        credentials: {
+          accessKeyId: credentials.accessKeyId,
+          secretAccessKey: credentials.secretAccessKey,
+        },
+      });
+    } else if (providerName === "azure") {
+      const { AzureProvider } = await import("./providers/azure-provider");
+      return new AzureProvider({
+        subscriptionId: credentials.subscriptionId,
+        tenantId: credentials.tenantId,
+        clientId: credentials.clientId,
+        clientSecret: credentials.clientSecret,
+        location: region || "eastus",
+      });
+    } else if (providerName === "gcp") {
+      const { GCPProvider } = await import("./providers/gcp-provider");
+      let saKey = credentials.serviceAccountKey;
+      if (typeof saKey === "string") {
+        try {
+          saKey = JSON.parse(saKey);
+        } catch (e) {}
+      }
+      return new GCPProvider({
+        projectId: credentials.projectId,
+        credentials: {
+          client_email: saKey?.client_email,
+          private_key: saKey?.private_key,
+        },
+        zone: region || "us-central1-a",
+      });
+    } else if (providerName === "onprem") {
+      const { OnPremProvider } = await import("./providers/onprem-provider");
+      return new OnPremProvider({
+        host: credentials.host,
+        user: credentials.user,
+        sshKey: credentials.sshKey,
+      });
+    }
+
+    throw new Error(`Provider ${providerName} not supported`);
+  },
+
   /**
    * Validation pass before running Terraform
    */
@@ -27,61 +84,27 @@ export const provisioner = {
     );
 
     try {
-      let result;
+      const provider = await this.getProvider(
+        cluster.provider,
+        credentials,
+        cluster.config?.region,
+      );
 
-      if (cluster.provider === "aws") {
-        const { AWSProvisionerService } = await import("./aws-provisioner");
-        const awsService = new AWSProvisionerService({
-          region: cluster.config?.region || "us-east-1",
-          credentials: {
-            accessKeyId: credentials.accessKeyId,
-            secretAccessKey: credentials.secretAccessKey,
-          },
-        });
-        result = await awsService.deployClusterNodes(
-          cluster.name,
-          cluster.config?.nodeCount || 3,
-        );
-        console.log(`[Provisioner] AWS Success: ${result.deploymentId}`);
-      } else if (cluster.provider === "azure") {
-        const { AzureProvisionerService } = await import("./azure-provisioner");
-        const azureService = new AzureProvisionerService({
-          subscriptionId: credentials.subscriptionId,
-          tenantId: credentials.tenantId,
-          clientId: credentials.clientId,
-          clientSecret: credentials.clientSecret,
-          location: cluster.config?.region || "eastus",
-        });
-        result = await azureService.deployClusterNodes(
-          cluster.name,
-          cluster.config?.nodeCount || 2,
-        );
-        console.log(`[Provisioner] Azure Success: ${result.deploymentId}`);
-      } else if (cluster.provider === "gcp") {
-        const { GCPProvisionerService } = await import("./gcp-provisioner");
-        let saKey = credentials.serviceAccountKey;
-        if (typeof saKey === "string") {
-          try {
-            saKey = JSON.parse(saKey);
-          } catch (e) {}
-        }
-        const gcpService = new GCPProvisionerService({
-          projectId: credentials.projectId,
-          credentials: {
-            client_email: saKey.client_email,
-            private_key: saKey.private_key,
-          },
-          zone: cluster.config?.region || "us-central1-a",
-        });
-        result = await gcpService.deployClusterNodes(
-          cluster.name,
-          cluster.config?.nodeCount || 2,
-        );
-        console.log(`[Provisioner] GCP Success: ${result.deploymentId}`);
-      } else {
-        // Mock for OnPrem
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-        result = { success: true, mock: true };
+      const result = await provider.deploy({
+        ...cluster.config,
+        name: cluster.name,
+      });
+
+      console.log(
+        `[Provisioner] ${cluster.provider} Success: ${result.deploymentId}`,
+      );
+
+      // SECURITY: Encrypt SSH Key Material before saving to DB
+      if (result.details?.keyMaterial) {
+        const { encryption } = await import("./encryption");
+        const encryptedKey = encryption.encrypt(result.details.keyMaterial);
+        result.details.keyMaterial = encryptedKey;
+        result.details.isEncrypted = true;
       }
 
       await db.query(
@@ -103,24 +126,19 @@ export const provisioner = {
   },
 
   /**
-   * Destroy a Cluster
+   * Get Kubeconfig for a cluster
    */
-  async destroyCluster(clusterId: string) {
-    console.log(
-      `[Provisioner] Requesting destruction for cluster ${clusterId}`,
-    );
-
+  async getKubeconfig(clusterId: string) {
     const res = await db.query("SELECT * FROM clusters WHERE id = $1", [
       clusterId,
     ]);
     if (res.rows.length === 0) throw new Error("Cluster not found");
     const cluster = res.rows[0];
 
+    // Load credentials
     const { credentialService } = await import("./credentials");
     const { encryption } = await import("./encryption");
-
     let credentials: any = {};
-
     if (credentialService.hasEnvCredentials(cluster.provider)) {
       const env = process.env;
       if (cluster.provider === "aws") {
@@ -128,19 +146,8 @@ export const provisioner = {
           accessKeyId: env.AWS_ACCESS_KEY_ID,
           secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
         };
-      } else if (cluster.provider === "azure") {
-        credentials = {
-          clientId: env.AZURE_CLIENT_ID,
-          clientSecret: env.AZURE_CLIENT_SECRET,
-          tenantId: env.AZURE_TENANT_ID,
-          subscriptionId: env.AZURE_SUBSCRIPTION_ID,
-        };
-      } else if (cluster.provider === "gcp") {
-        credentials = {
-          projectId: env.GCP_PROJECT_ID,
-          serviceAccountKey: env.GCP_SERVICE_ACCOUNT_KEY,
-        };
       }
+      // ... other envs
     } else {
       const credRes = await db.query(
         "SELECT encrypted_data FROM credentials WHERE provider = $1",
@@ -153,47 +160,82 @@ export const provisioner = {
       }
     }
 
+    const provider = await this.getProvider(
+      cluster.provider,
+      credentials,
+      cluster.config.region,
+    );
+
+    // SECURITY: Decrypt SSH Key if needed before passing to provider
+    const provisioningResult = cluster.config?.provisioningResult || {};
+    if (
+      provisioningResult.details?.isEncrypted &&
+      provisioningResult.details?.keyMaterial
+    ) {
+      // We need to decrypt it temporarily for the provider to use
+      const decryptedKey = encryption.decrypt(
+        provisioningResult.details.keyMaterial,
+      );
+      // We pass a clone with the decrypted key
+      const decryptedResult = JSON.parse(JSON.stringify(provisioningResult));
+      decryptedResult.details.keyMaterial = decryptedKey;
+      return provider.getKubeconfig(decryptedResult);
+    }
+
+    return provider.getKubeconfig(provisioningResult);
+  },
+
+  /**
+   * Destroy a Cluster
+   */
+  async destroyCluster(clusterId: string) {
+    console.log(
+      `[Provisioner] Requesting destruction for cluster ${clusterId}`,
+    );
+
+    const res = await db.query("SELECT * FROM clusters WHERE id = $1", [
+      clusterId,
+    ]);
+    if (res.rows.length === 0) throw new Error("Cluster not found");
+    const cluster = res.rows[0];
     const deploymentId = cluster.config?.provisioningResult?.deploymentId;
-    if (deploymentId && Object.keys(credentials).length > 0) {
-      try {
-        if (cluster.provider === "aws") {
-          const { AWSProvisionerService } = await import("./aws-provisioner");
-          const aws = new AWSProvisionerService({
-            region: cluster.config.region || "us-east-1",
-            credentials,
-          });
-          await aws.destroyCluster(deploymentId);
-        } else if (cluster.provider === "azure") {
-          const { AzureProvisionerService } =
-            await import("./azure-provisioner");
-          const azure = new AzureProvisionerService({
-            ...credentials,
-            location: cluster.config.region || "eastus",
-          });
-          await azure.destroyCluster(deploymentId);
-        } else if (cluster.provider === "gcp") {
-          const { GCPProvisionerService } = await import("./gcp-provisioner");
-          let saKey = credentials.serviceAccountKey;
-          if (typeof saKey === "string") {
-            try {
-              saKey = JSON.parse(saKey);
-            } catch (e) {}
-          }
-          const gcp = new GCPProvisionerService({
-            projectId: credentials.projectId,
-            credentials: {
-              client_email: saKey?.client_email,
-              private_key: saKey?.private_key,
-            },
-            zone: cluster.config.region || "us-central1-a",
-          });
-          await gcp.destroyCluster(deploymentId);
-        }
-      } catch (e: any) {
-        console.error(
-          `[Provisioner] Failed to auto-destroy cloud resources: ${e.message}`,
+
+    if (!deploymentId) {
+      // Just delete from DB if no resources were created
+      await db.query("DELETE FROM clusters WHERE id = $1", [clusterId]);
+      return true;
+    }
+
+    // Load credentials
+    const { credentialService } = await import("./credentials");
+    const { encryption } = await import("./encryption");
+    let credentials: any = {};
+
+    if (credentialService.hasEnvCredentials(cluster.provider)) {
+      credentials = credentialService.getEnvCredentials(cluster.provider);
+    } else {
+      const credRes = await db.query(
+        "SELECT encrypted_data FROM credentials WHERE provider = $1",
+        [cluster.provider],
+      );
+      if (credRes.rows.length > 0) {
+        credentials = JSON.parse(
+          encryption.decrypt(credRes.rows[0].encrypted_data),
         );
       }
+    }
+
+    try {
+      const provider = await this.getProvider(
+        cluster.provider,
+        credentials,
+        cluster.config.region,
+      );
+      await provider.destroy(deploymentId);
+    } catch (e: any) {
+      console.error(
+        `[Provisioner] Failed to auto-destroy resources: ${e.message}`,
+      );
     }
 
     await db.query("DELETE FROM clusters WHERE id = $1", [clusterId]);

@@ -113,7 +113,11 @@ export const credentialService = {
         data.serviceAccountKey,
       );
     } else if (provider === "onprem") {
-      validation = { valid: true, identity: `On-Prem Host: ${data.host}` };
+      validation = await validators.validateOnPrem(
+        data.host,
+        data.user,
+        data.sshKey,
+      );
     } else {
       throw new Error("Unknown provider");
     }

@@ -257,15 +257,27 @@ app.get("/clusters", async (req, res) => {
 // Create new cluster (with organization assignment)
 app.post("/clusters", async (req, res) => {
   const config = req.body;
-  const { orgId } = getOrgContext(req);
+  const { orgId, isAdmin } = getOrgContext(req);
 
   if (!config.name || !config.provider) {
     return res.status(400).json({ error: "Missing name or provider" });
   }
 
-  // Use provided organization_id, or from header, or default
-  const organizationId =
-    config.organization_id || orgId || "00000000-0000-0000-0000-000000000000";
+  // Determine Organization ID based on RBAC
+  let organizationId = "00000000-0000-0000-0000-000000000000";
+
+  if (isAdmin) {
+    // Admin can specify any org, or default to header, or default to System
+    organizationId = config.organization_id || orgId || organizationId;
+  } else if (orgId) {
+    // Regular user is locked to their header context
+    organizationId = orgId;
+    if (config.organization_id && config.organization_id !== orgId) {
+      return res
+        .status(403)
+        .json({ error: "Cannot create clusters for other organizations" });
+    }
+  }
 
   // Verify organization exists
   const orgCheck = await organizationService.getById(organizationId);
@@ -316,6 +328,38 @@ app.post("/clusters", async (req, res) => {
   } catch (error) {
     logger.error("Error creating cluster:", error);
     res.status(500).json({ error: "Failed to create cluster" });
+  }
+});
+
+// Get Kubeconfig
+app.get("/clusters/:id/kubeconfig", async (req, res) => {
+  try {
+    const { orgId, isAdmin } = getOrgContext(req);
+
+    // Verify access
+    if (!isAdmin && orgId) {
+      const clusterCheck = await db.query(
+        "SELECT organization_id FROM clusters WHERE id = $1",
+        [req.params.id],
+      );
+      if (clusterCheck.rows.length === 0) {
+        return res.status(404).json({ error: "Cluster not found" });
+      }
+      if (clusterCheck.rows[0].organization_id !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+    }
+
+    const kubeconfig = await provisioner.getKubeconfig(req.params.id);
+    res.setHeader("Content-Type", "application/x-yaml");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="kubeconfig-${req.params.id}.yaml"`,
+    );
+    res.send(kubeconfig);
+  } catch (error: any) {
+    logger.error("Error retrieving kubeconfig:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 

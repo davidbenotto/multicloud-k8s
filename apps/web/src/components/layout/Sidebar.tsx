@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui";
 import { OrgSelector } from "@/components/OrgSelector";
+import { useOrganization } from "@/contexts/OrganizationContext";
 
 const navigation = [
   { href: "/", label: "Dashboard", icon: LayoutGrid },
@@ -30,6 +31,7 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const { isAdmin, setAdminMode } = useOrganization();
 
   return (
     <motion.aside
@@ -157,7 +159,7 @@ export function Sidebar() {
       <div className="p-3 border-t border-border">
         <div
           className={cn(
-            "flex items-center gap-3 px-2 py-2 rounded-lg bg-muted/50",
+            "flex items-center gap-3 px-2 py-2 rounded-lg bg-muted/50 mb-2",
             collapsed && "justify-center",
           )}
         >
@@ -173,10 +175,26 @@ export function Sidebar() {
                 exit={{ opacity: 0, width: 0 }}
                 className="flex-1 min-w-0"
               >
-                <p className="text-sm font-medium truncate">Admin</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  admin@cluster.io
-                </p>
+                <p className="text-sm font-medium truncate">Demo User</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    Admin Mode
+                  </span>
+                  <button
+                    onClick={() => setAdminMode(!isAdmin)}
+                    className={cn(
+                      "w-8 h-4 rounded-full transition-colors relative",
+                      isAdmin ? "bg-primary" : "bg-muted-foreground/30",
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all",
+                        isAdmin ? "left-4.5" : "left-0.5",
+                      )}
+                    />
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
