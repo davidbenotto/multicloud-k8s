@@ -10,9 +10,59 @@
 ![Next.js](https://img.shields.io/badge/Next.js-14.0-black?style=flat-square&logo=next.js&logoColor=white)
 
 **A unified, multi-tenant Kubernetes management platform built for the enterprise.**
-Orchestrate clusters across AWS, Azure, GCP, and On-Premises environments with strict organization-based isolation and role-based access control.
 
 </div>
+
+---
+
+## 🎯 Project Goals
+
+1.  **Unified Cloud Abstraction**: Eliminate the complexity of managing disparate cloud APIs. Provide a single, normalized interface for provisioning clusters on AWS, Azure, GCP, and On-Premises hardware.
+2.  **Strict Multi-Tenancy**: Enforce hard boundaries between organizations. Ensure that data, credentials, and resources are strictly isolated per tenant to meet enterprise compliance standards.
+3.  **Secure by Design**: Prioritize security at every layer—from AES-256 encrypted credentials at rest to Role-Based Access Control (RBAC) in the API and active credential verification before use.
+4.  **Extensible Architecture**: Build a backend that can easily accommodate new cloud providers without rewriting core business logic, utilizing the Strategy Pattern.
+
+---
+
+## 🏗 Architecture
+
+The platform follows a **Clean Architecture** approach, separating the core business logic from external infrastructure concerns.
+
+### High-Level Design
+
+```mermaid
+graph TD
+    User[Admin / User] -->|HTTPS| Web[Next.js Frontend]
+    Web -->|REST API| API[Express.js API]
+
+    subgraph Core Services
+        API --> Provisioner[Provisioner Service]
+        API --> Creds[Credential Service]
+        Provisioner --> Strategy{Provider Strategy}
+    end
+
+    subgraph Provider Adapters
+        Strategy -->|Select| AWS[AWS Provider]
+        Strategy -->|Select| Azure[Azure Provider]
+        Strategy -->|Select| GCP[GCP Provider]
+        Strategy -->|Select| OnPrem[On-Prem Provider]
+    end
+
+    subgraph Infrastructure
+        AWS -->|SDK v3| AWSCloud[AWS Cloud]
+        Azure -->|ARM Client| AzureCloud[Azure Cloud]
+        GCP -->|Compute API| GCPCloud[Google Cloud]
+        OnPrem -->|SSH| Datacenter[Physical Servers]
+    end
+
+    Creds -->|AES-256| DB[(PostgreSQL)]
+```
+
+### Key Components
+
+- **ClusterProvider Interface**: The heart of the extensibility. All cloud providers implement this contract (`deploy`, `destroy`, `getKubeconfig`).
+- **Organization Context**: A middleware layer that injects `organization_id` into every request, ensuring queries are always scoped to the user's tenant.
+- **Active Verification System**: A dedicated validator module that tests credentials against real cloud APIs before they are accepted.
 
 ---
 
@@ -20,113 +70,32 @@ Orchestrate clusters across AWS, Azure, GCP, and On-Premises environments with s
 
 ### 🏢 Enterprise Multi-Tenancy
 
-- **Strict Isolation**: Resources (Clusters, Credentials) are strictly scoped to Organizations. Users in "Org A" cannot see or touch "Org B" resources.
-- **Role-Based Access Control (RBAC)**:
-  - **Admin Mode**: Global oversight for platform administrators.
-  - **User Mode**: Restricted access within assigned organizations.
+- **Strict Isolation**: Resources (Clusters, Credentials) are strictly scoped to Organizations.
+- **Role-Based Access Control (RBAC)**: Global **Admin Mode** vs. Scoped **User Mode**.
 - **Context Switching**: Seamlessly toggle between organizations via the UI.
 
-### ☁️ Unified Provider Strategy
+### ⚡ Unified Operations
 
-- **One Interface, Any Cloud**: Normalized operations for **AWS**, **Azure**, **GCP**, and **On-Prem** (SSH) providers.
-- **Strategy Pattern**: Extensible backend architecture (`ClusterProvider` interface) allowing easy addition of new cloud providers.
-- **Active Validation**: Real-time API verification for all credentials:
-  - **AWS**: STS Identity Check
-  - **Azure**: Resource Group Listing
-  - **GCP**: Service Account Authentication
-  - **On-Prem**: SSH Connection Test
+- **One Interface, Any Cloud**: Normalized operations for AWS, Azure, GCP, and On-Prem.
+- **Real-time Validation**: Active API verification for all credentials (AWS STS, Azure RG, etc.).
 
-### 🔒 Security First
+### 🔒 Security
 
-- **Encryption at Rest**: All sensitive credentials (API Keys, SSH Keys) are AES-256 encrypted before storage.
-- **Secure Provisioning**: Keys are decrypted only in memory during provisioning operations.
-- **Audit Ready**: Deployment IDs and tags trace every resource back to its creator and organization.
+- **Encryption at Rest**: AES-256 for all API keys and secrets.
+- **Audit Ready**: Full strict resource tagging.
 
 ---
 
-## 🏗 Architecture & Tech Stack
+## 🛠 Tech Stack
 
-The platform is built on a modern, type-safe stack designed for reliability and scale.
-
-| Domain             | Technology                                                                                                                                |
-| :----------------- | :---------------------------------------------------------------------------------------------------------------------------------------- |
-| **Frontend**       | [Next.js 14](https://nextjs.org/) (App Router), [Tailwind CSS](https://tailwindcss.com/), [Framer Motion](https://www.framer.com/motion/) |
-| **Backend**        | [Node.js](https://nodejs.org/), [Express.js](https://expressjs.com/), [TypeScript](https://www.typescriptlang.org/)                       |
-| **Database**       | [PostgreSQL](https://www.postgresql.org/) (with `pg` driver)                                                                              |
-| **Infrastructure** | Docker, Docker Compose                                                                                                                    |
-| **Cloud SDKs**     | AWS SDK v3, Azure Identity/ARM, Google Cloud Compute, Node-SSH                                                                            |
+| Domain             | Technology                                                                                                          |
+| :----------------- | :------------------------------------------------------------------------------------------------------------------ |
+| **Frontend**       | [Next.js 14](https://nextjs.org/) (App Router), [Tailwind CSS](https://tailwindcss.com/)                            |
+| **Backend**        | [Node.js](https://nodejs.org/), [Express.js](https://expressjs.com/), [TypeScript](https://www.typescriptlang.org/) |
+| **Database**       | [PostgreSQL](https://www.postgresql.org/) (with `pg` driver)                                                        |
+| **Infrastructure** | Docker, Docker Compose                                                                                              |
 
 ---
-
-## ⚡ Getting Started
-
-### Prerequisites
-
-- Node.js v18+
-- Docker & Docker Compose
-- PostgreSQL (if not using Docker)
-
-### Installation
-
-1.  **Clone the repository**
-
-    ```bash
-    git clone <repository-url>
-    cd clusters
-    ```
-
-2.  **Install Dependencies**
-
-    ```bash
-    # Install root and workspace dependencies
-    npm install
-    ```
-
-3.  **Environment Setup**
-    Create a `.env` file in the root directory:
-
-    ```env
-    PORT=3333
-    DATABASE_URL="postgresql://clusters:securepassword@localhost:5435/clusters_control_plane"
-    ENCRYPTION_KEY="<generate-random-32-char-string>"
-    ```
-
-4.  **Start Services**
-
-    ```bash
-    # Start Database
-    cd docker && docker-compose up -d
-
-    # Run Development Server (Frontend + Backend)
-    npm run dev
-    ```
-
-    - **Frontend**: [http://localhost:3000](http://localhost:3000)
-    - **Backend API**: [http://localhost:3333](http://localhost:3333)
-
----
-
-## 🛡️ Admin & Security Guide
-
-### Managing Access
-
-To test RBAC features:
-
-1.  Navigate to the **Sidebar**.
-2.  Use the **Admin Mode** toggle (bottom).
-    - **OFF**: Simulates a regular user (scoped views).
-    - **ON**: Grants full visibility across all organizations.
-
-### Credential Safety
-
-- Never commit `.env` files.
-- Ensure `ENCRYPTION_KEY` is kept secret and backed up; losing it renders stored credentials unreadable.
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Please follow the `ClusterProvider` interface pattern when adding new cloud integrations.
 
 ## 📄 License
 
