@@ -6,8 +6,9 @@ module.exports = {
       script: "npm",
       args: "run dev",
       watch: ["src"],
-      ignore_watch: ["node_modules"],
+      ignore_watch: ["node_modules", "dist"],
       env_file: "./.env",
+      restart_delay: 3000,
       env: {
         PORT: 3333,
         NODE_ENV: "development",
@@ -21,6 +22,7 @@ module.exports = {
       script: "npm",
       args: "run dev",
       env_file: "./.env",
+      restart_delay: 3000,
       env: {
         PORT: 3000,
       },
