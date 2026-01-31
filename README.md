@@ -2,67 +2,69 @@
 
 <div align="center">
 
-![Clusters Architecture](./architecture.jpg)
+![Clusters Dashboard](./architecture.jpg)
 
-![Project Status](https://img.shields.io/badge/status-active-success.svg)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Status](https://img.shields.io/badge/status-production--ready-success.svg?style=flat-square)
+![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-14.0-black?style=flat-square&logo=next.js&logoColor=white)
 
-A modern, multi-cloud cluster management platform designed for organization-based multi-tenancy. This platform allows administrators to manage Kubernetes clusters across various providers (AWS, Azure, GCP, On-Prem) with isolated environments for different clients.
+**A unified, multi-tenant Kubernetes management platform built for the enterprise.**
+Orchestrate clusters across AWS, Azure, GCP, and On-Premises environments with strict organization-based isolation and role-based access control.
 
 </div>
 
-## 🚀 Features
+---
 
-- **Multi-Cloud Support**: Provision and manage clusters on AWS, Azure, Google Cloud, and On-Premises.
-- **Multi-Tenancy**: Organization-based isolation. Each client (Organization) has its own clusters and credentials.
-- **Credential Management**: Securely store and manage cloud provider credentials per organization.
-- **Admin Control**: Global view for administrators to oversee all organizations and clusters.
-- **Modern UI**: Responsive, dark-mode enabled dashboard built with Next.js and Tailwind CSS.
-- **Real-time Updates**: Status monitoring for cluster provisioning and health.
+## 🚀 Key Features
 
-## 🏗 Architecture
+### 🏢 Enterprise Multi-Tenancy
 
-(See project overview above)
+- **Strict Isolation**: Resources (Clusters, Credentials) are strictly scoped to Organizations. Users in "Org A" cannot see or touch "Org B" resources.
+- **Role-Based Access Control (RBAC)**:
+  - **Admin Mode**: Global oversight for platform administrators.
+  - **User Mode**: Restricted access within assigned organizations.
+- **Context Switching**: Seamlessly toggle between organizations via the UI.
 
-## 🛠 Tech Stack
+### ☁️ Unified Provider Strategy
 
-### Frontend (apps/web)
+- **One Interface, Any Cloud**: Normalized operations for **AWS**, **Azure**, **GCP**, and **On-Prem** (SSH) providers.
+- **Strategy Pattern**: Extensible backend architecture (`ClusterProvider` interface) allowing easy addition of new cloud providers.
+- **Active Validation**: Real-time API verification for all credentials:
+  - **AWS**: STS Identity Check
+  - **Azure**: Resource Group Listing
+  - **GCP**: Service Account Authentication
+  - **On-Prem**: SSH Connection Test
 
-- **Framework**: [Next.js 14](https://nextjs.org/) (App Router)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-- **Components**: Custom UI library with [Lucide React](https://lucide.dev/) icons
-- **Animations**: [Framer Motion](https://www.framer.com/motion/)
+### 🔒 Security First
 
-### Backend (apps/api)
+- **Encryption at Rest**: All sensitive credentials (API Keys, SSH Keys) are AES-256 encrypted before storage.
+- **Secure Provisioning**: Keys are decrypted only in memory during provisioning operations.
+- **Audit Ready**: Deployment IDs and tags trace every resource back to its creator and organization.
 
-- **Runtime**: [Node.js](https://nodejs.org/)
-- **Server**: Express.js
-- **Database**: PostgreSQL (managed via `pg` driver)
-- **Architecture**: Service-based architecture with separated concerns
+---
 
-### Shared (packages/common)
+## 🏗 Architecture & Tech Stack
 
-- **Types**: Shared TypeScript interfaces/types for consistent data models across frontend and backend.
+The platform is built on a modern, type-safe stack designed for reliability and scale.
 
-## 📂 Project Structure
+| Domain             | Technology                                                                                                                                |
+| :----------------- | :---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Frontend**       | [Next.js 14](https://nextjs.org/) (App Router), [Tailwind CSS](https://tailwindcss.com/), [Framer Motion](https://www.framer.com/motion/) |
+| **Backend**        | [Node.js](https://nodejs.org/), [Express.js](https://expressjs.com/), [TypeScript](https://www.typescriptlang.org/)                       |
+| **Database**       | [PostgreSQL](https://www.postgresql.org/) (with `pg` driver)                                                                              |
+| **Infrastructure** | Docker, Docker Compose                                                                                                                    |
+| **Cloud SDKs**     | AWS SDK v3, Azure Identity/ARM, Google Cloud Compute, Node-SSH                                                                            |
 
-```text
-clusters/
-├── apps/
-│   ├── web/                 # Next.js Frontend Application
-│   └── api/                 # Express.js Backend API
-├── packages/
-│   └── common/              # Shared Types and Utilities
-├── docker/                  # Docker Configuration
-└── README.md                # Project Documentation
-```
+---
 
 ## ⚡ Getting Started
 
 ### Prerequisites
 
-- Node.js (v18+)
-- Docker & Docker Compose (for the local database)
+- Node.js v18+
+- Docker & Docker Compose
+- PostgreSQL (if not using Docker)
 
 ### Installation
 
@@ -73,45 +75,59 @@ clusters/
     cd clusters
     ```
 
-2.  **Install dependencies**
+2.  **Install Dependencies**
 
     ```bash
+    # Install root and workspace dependencies
     npm install
     ```
 
-3.  **Environment Configuration**
-    Create a `.env` file in the root directory based on `.env.example` (or use the provided template).
+3.  **Environment Setup**
+    Create a `.env` file in the root directory:
 
     ```env
     PORT=3333
     DATABASE_URL="postgresql://clusters:securepassword@localhost:5435/clusters_control_plane"
-    ENCRYPTION_KEY="<your-32-char-encryption-key>"
+    ENCRYPTION_KEY="<generate-random-32-char-string>"
     ```
 
-4.  **Start the Database**
+4.  **Start Services**
 
     ```bash
-    cd docker
-    docker-compose up -d
-    ```
+    # Start Database
+    cd docker && docker-compose up -d
 
-5.  **Run Development Server**
-    From the root directory:
-
-    ```bash
+    # Run Development Server (Frontend + Backend)
     npm run dev
     ```
 
-    This command starts:
-    - Backend API at `http://localhost:3333`
-    - Frontend App at `http://localhost:3000`
+    - **Frontend**: [http://localhost:3000](http://localhost:3000)
+    - **Backend API**: [http://localhost:3333](http://localhost:3333)
 
-## 🔐 Credentials & Security
+---
 
-- **Organization Isolation**: Clusters are strictly filtered by Organization ID.
-- **Encryption**: Cloud credentials (AWS Access Keys, Service Principals, etc.) turn stored using AES-256 encryption.
-- **Secure Handling**: Decryption occurs only during provisioning operations within the API.
+## 🛡️ Admin & Security Guide
 
-## 🛡 License
+### Managing Access
 
-This project is licensed under the MIT License.
+To test RBAC features:
+
+1.  Navigate to the **Sidebar**.
+2.  Use the **Admin Mode** toggle (bottom).
+    - **OFF**: Simulates a regular user (scoped views).
+    - **ON**: Grants full visibility across all organizations.
+
+### Credential Safety
+
+- Never commit `.env` files.
+- Ensure `ENCRYPTION_KEY` is kept secret and backed up; losing it renders stored credentials unreadable.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please follow the `ClusterProvider` interface pattern when adding new cloud integrations.
+
+## 📄 License
+
+MIT © 2024 Cluster Control Plane
