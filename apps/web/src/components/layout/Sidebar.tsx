@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui";
 import { OrgSelector } from "@/components/OrgSelector";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navigation = [
   { href: "/", label: "Dashboard", icon: LayoutGrid },
@@ -31,7 +32,12 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const { isAdmin, setAdminMode } = useOrganization();
+  const { isAdmin } = useOrganization();
+  const { session, logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+  };
 
   return (
     <motion.aside
@@ -145,7 +151,7 @@ export function Sidebar() {
                   initial={{ opacity: 0, width: 0 }}
                   animate={{ opacity: 1, width: "auto" }}
                   exit={{ opacity: 0, width: 0 }}
-                  className="whitespace-nowrap"
+                  className="text-sm font-medium"
                 >
                   New Cluster
                 </motion.span>
@@ -155,50 +161,66 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* User Section */}
-      <div className="p-3 border-t border-border">
-        <div
-          className={cn(
-            "flex items-center gap-3 px-2 py-2 rounded-lg bg-muted/50 mb-2",
-            collapsed && "justify-center",
-          )}
-        >
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center flex-shrink-0">
-            <User size={16} className="text-white" />
-          </div>
-
-          <AnimatePresence mode="wait">
-            {!collapsed && (
-              <motion.div
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: "auto" }}
-                exit={{ opacity: 0, width: 0 }}
-                className="flex-1 min-w-0"
-              >
-                <p className="text-sm font-medium truncate">Demo User</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    Admin Mode
-                  </span>
-                  <button
-                    onClick={() => setAdminMode(!isAdmin)}
-                    className={cn(
-                      "w-8 h-4 rounded-full transition-colors relative",
-                      isAdmin ? "bg-primary" : "bg-muted-foreground/30",
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all",
-                        isAdmin ? "left-4.5" : "left-0.5",
-                      )}
-                    />
-                  </button>
+      {/* User Profile Section */}
+      <div className="border-t border-border p-3">
+        <AnimatePresence mode="wait">
+          {!collapsed && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-2"
+            >
+              {/* User Info */}
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/50">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white font-semibold text-xs">
+                  {session?.cloudIdentity?.substring(0, 2).toUpperCase() || "U"}
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {session?.cloudIdentity || "Not authenticated"}
+                  </p>
+                  <p className="text-xs text-muted-foreground capitalize">
+                    {session?.cloudProvider || ""}
+                    {session?.isAdmin && " • Admin"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Logout Button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 text-muted-foreground hover:text-destructive"
+                onClick={handleLogout}
+              >
+                <LogOut size={16} />
+                Logout
+              </Button>
+            </motion.div>
+          )}
+
+          {collapsed && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white font-semibold text-xs">
+                {session?.cloudIdentity?.substring(0, 2).toUpperCase() || "U"}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={handleLogout}
+              >
+                <LogOut size={16} />
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </motion.aside>
   );

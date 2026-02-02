@@ -6,6 +6,11 @@ import { db } from "./services/database";
 import { provisioner } from "./services/provisioner";
 import { credentialService } from "./services/credentials";
 import { organizationService } from "./services/organizations";
+import {
+  loginWithCloudCredentials,
+  validateSession,
+  logout,
+} from "./services/auth";
 import morgan from "morgan";
 import { env } from "./utils/validate-env";
 import { logger } from "./utils/logger";
@@ -35,8 +40,9 @@ app.use(express.json());
 // Helper: Get organization context from request
 const getOrgContext = (req: express.Request) => {
   const orgId = req.headers["x-organization-id"] as string;
+  const userId = req.headers["x-user-id"] as string;
   const isAdmin = req.headers["x-admin-mode"] === "true";
-  return { orgId, isAdmin };
+  return { orgId, userId, isAdmin };
 };
 
 logger.info(
@@ -45,15 +51,100 @@ logger.info(
 // Use preconfigured credentials if env vars are present (logic handled in services usually, just logging here)
 logger.info("[Current Config] Environment validation successful");
 
+// --- Authentication Routes ---
+
+// Login with cloud credentials
+app.post("/auth/login", async (req, res) => {
+  try {
+    const credentials = req.body;
+
+    if (!credentials.provider) {
+      return res.status(400).json({ error: "Provider is required" });
+    }
+
+    const sessionInfo = await loginWithCloudCredentials(credentials);
+
+    res.json({
+      success: true,
+      session: sessionInfo,
+    });
+  } catch (error) {
+    logger.error("Login error:", error);
+    res.status(401).json({
+      error: error instanceof Error ? error.message : "Authentication failed",
+    });
+  }
+});
+
+// Validate current session
+app.get("/auth/session", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "No session token provided" });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    const session = await validateSession(sessionToken);
+
+    if (!session) {
+      return res.status(401).json({ error: "Invalid or expired session" });
+    }
+
+    // Get organization details
+    const org = await organizationService.getById(session.organizationId);
+
+    res.json({
+      success: true,
+      session: {
+        organizationId: session.organizationId,
+        organization: org,
+        cloudProvider: session.cloudProvider,
+        cloudIdentity: session.cloudIdentity,
+        isAdmin: session.isAdmin,
+      },
+    });
+  } catch (error) {
+    logger.error("Session validation error:", error);
+    res.status(500).json({ error: "Failed to validate session" });
+  }
+});
+
+// Logout
+app.post("/auth/logout", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(400).json({ error: "No session token provided" });
+    }
+
+    const sessionToken = authHeader.substring(7);
+    await logout(sessionToken);
+
+    res.json({ success: true, message: "Logged out successfully" });
+  } catch (error) {
+    logger.error("Logout error:", error);
+    res.status(500).json({ error: "Failed to logout" });
+  }
+});
+
 // --- Organization Routes ---
 
 // List all organizations
 app.get("/organizations", async (req, res) => {
   try {
-    const { isAdmin } = getOrgContext(req);
-    const organizations = isAdmin
-      ? await organizationService.getAllAdmin()
-      : await organizationService.getAll();
+    const { isAdmin, userId } = getOrgContext(req);
+
+    let organizations;
+    if (isAdmin) {
+      organizations = await organizationService.getAllAdmin();
+    } else if (userId) {
+      organizations = await organizationService.getForUser(userId);
+    } else {
+      organizations = await organizationService.getAll();
+    }
 
     // Get cluster counts
     const counts = await organizationService.getClusterCounts();

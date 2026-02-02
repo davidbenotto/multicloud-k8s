@@ -44,6 +44,20 @@ export const organizationService = {
   },
 
   /**
+   * Get organizations for a specific user (based on user_organizations mapping)
+   */
+  async getForUser(userId: string): Promise<Organization[]> {
+    const result = await db.query(
+      `SELECT o.* FROM organizations o
+       INNER JOIN user_organizations uo ON o.id = uo.organization_id
+       WHERE uo.user_id = $1 AND o.is_active = true
+       ORDER BY o.name ASC`,
+      [userId],
+    );
+    return result.rows;
+  },
+
+  /**
    * Get organization by ID
    */
   async getById(id: string): Promise<Organization | null> {

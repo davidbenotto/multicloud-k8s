@@ -10,7 +10,7 @@ export type ApiResponse<T> =
 
 interface RequestOptions extends RequestInit {
   params?: Record<string, string>;
-  skipOrgHeader?: boolean;
+  skipAuth?: boolean;
 }
 
 class ApiError extends Error {
@@ -24,18 +24,6 @@ class ApiError extends Error {
   }
 }
 
-// Organization context getter - will be set by OrgProvider
-let getOrgContext: () => { orgId: string | null; isAdmin: boolean } = () => ({
-  orgId: null,
-  isAdmin: false,
-});
-
-export const setOrgContextGetter = (
-  getter: () => { orgId: string | null; isAdmin: boolean },
-) => {
-  getOrgContext = getter;
-};
-
 /**
  * Base fetch wrapper with error handling
  */
@@ -43,7 +31,7 @@ async function request<T>(
   endpoint: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { params, skipOrgHeader, ...init } = options;
+  const { params, skipAuth, ...init } = options;
 
   // Build URL with query params
   let url = `${API_URL}${endpoint}`;
@@ -52,25 +40,27 @@ async function request<T>(
     url += `?${searchParams.toString()}`;
   }
 
-  // Get org context and build headers
-  const orgContext = getOrgContext();
-  const orgHeaders: HeadersInit = {};
+  // Build headers with session token
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
 
-  if (!skipOrgHeader) {
-    if (orgContext.orgId) {
-      orgHeaders["X-Organization-ID"] = orgContext.orgId;
-    }
-    if (orgContext.isAdmin) {
-      orgHeaders["X-Admin-Mode"] = "true";
-    }
+  // Merge init headers
+  if (init.headers) {
+    Object.entries(init.headers as Record<string, string>).forEach(
+      ([key, value]) => {
+        headers[key] = value;
+      },
+    );
   }
 
-  // Default headers
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    ...orgHeaders,
-    ...init.headers,
-  };
+  // Add session token if available and not skipped
+  if (!skipAuth && typeof window !== "undefined") {
+    const sessionToken = localStorage.getItem("cloud_session_token");
+    if (sessionToken) {
+      headers["Authorization"] = `Bearer ${sessionToken}`;
+    }
+  }
 
   try {
     const response = await fetch(url, {
@@ -112,10 +102,11 @@ export const api = {
   get: <T>(endpoint: string, params?: Record<string, string>) =>
     request<T>(endpoint, { method: "GET", params }),
 
-  post: <T>(endpoint: string, data?: unknown) =>
+  post: <T>(endpoint: string, data?: unknown, skipAuth?: boolean) =>
     request<T>(endpoint, {
       method: "POST",
       body: data ? JSON.stringify(data) : undefined,
+      skipAuth,
     }),
 
   put: <T>(endpoint: string, data?: unknown) =>

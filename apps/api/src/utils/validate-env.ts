@@ -18,6 +18,7 @@ const envSchema = z.object({
   AZURE_TENANT_ID: z.string().optional(),
   AZURE_SUBSCRIPTION_ID: z.string().optional(),
   ADMIN_EMAILS: z.string().optional(),
+  ADMIN_CLOUD_ACCOUNTS: z.string().optional(), // Comma-separated list of admin cloud account IDs
 });
 
 export const validateEnv = () => {

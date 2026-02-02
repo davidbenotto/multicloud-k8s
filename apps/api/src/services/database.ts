@@ -27,9 +27,18 @@ export const db = {
         name VARCHAR(255) NOT NULL,
         slug VARCHAR(100) NOT NULL UNIQUE,
         description TEXT,
+        
+        -- Cloud provider identity
+        cloud_provider VARCHAR(50), -- 'aws', 'azure', 'gcp'
+        cloud_account_id VARCHAR(255), -- AWS account, Azure tenant, GCP project
+        cloud_account_name VARCHAR(255), -- Friendly name from cloud
+        
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        
+        -- Ensure unique cloud identity per org
+        UNIQUE(cloud_provider, cloud_account_id)
       );
 
       -- Create default organization for existing/unassigned clusters
@@ -57,6 +66,27 @@ export const db = {
         organization_id UUID REFERENCES organizations(id) DEFAULT '00000000-0000-0000-0000-000000000000',
         connection_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- User-Organization mapping table for access control
+      CREATE TABLE IF NOT EXISTS user_organizations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR(255) NOT NULL,
+        organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, organization_id)
+      );
+
+      -- User sessions table for cloud credential-based authentication
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        session_token VARCHAR(255) UNIQUE NOT NULL,
+        organization_id UUID REFERENCES organizations(id),
+        cloud_provider VARCHAR(50) NOT NULL,
+        cloud_identity VARCHAR(255) NOT NULL,
+        cloud_account_id VARCHAR(255) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
       
       -- Migrations: Ensure columns exist
@@ -92,6 +122,21 @@ export const db = {
         EXCEPTION
           WHEN duplicate_column THEN NULL;
         END;
+        BEGIN
+          ALTER TABLE organizations ADD COLUMN cloud_provider VARCHAR(50);
+        EXCEPTION
+          WHEN duplicate_column THEN NULL;
+        END;
+        BEGIN
+          ALTER TABLE organizations ADD COLUMN cloud_account_id VARCHAR(255);
+        EXCEPTION
+          WHEN duplicate_column THEN NULL;
+        END;
+        BEGIN
+          ALTER TABLE organizations ADD COLUMN cloud_account_name VARCHAR(255);
+        EXCEPTION
+          WHEN duplicate_column THEN NULL;
+        END;
       END $$;
 
       -- Create indexes for performance
@@ -100,6 +145,16 @@ export const db = {
       CREATE INDEX IF NOT EXISTS idx_organizations_active ON organizations(is_active);
       CREATE INDEX IF NOT EXISTS idx_credentials_organization ON credentials(organization_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_credentials_org_provider ON credentials(organization_id, provider);
+      CREATE INDEX IF NOT EXISTS idx_user_organizations_user_id ON user_organizations(user_id);
+      CREATE INDEX IF NOT EXISTS idx_user_organizations_org_id ON user_organizations(organization_id);
+      CREATE INDEX IF NOT EXISTS idx_sessions_token ON user_sessions(session_token);
+      CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON user_sessions(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_sessions_org ON user_sessions(organization_id);
+
+      -- Seed dev user with access to default organization
+      INSERT INTO user_organizations (user_id, organization_id)
+      VALUES ('dev-cluster-user', '00000000-0000-0000-0000-000000000000')
+      ON CONFLICT (user_id, organization_id) DO NOTHING;
 
       -- Update any existing clusters without organization to default
       UPDATE clusters SET organization_id = '00000000-0000-0000-0000-000000000000' WHERE organization_id IS NULL;

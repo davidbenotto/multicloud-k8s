@@ -32,7 +32,12 @@ import { cn } from "@/lib/utils";
 import { useEffect, useState as useReactState } from "react";
 
 export default function OrganizationsPage() {
-  const { organizations, refetch, loading: contextLoading } = useOrganization();
+  const {
+    organizations,
+    refetch,
+    loading: contextLoading,
+    isAdmin,
+  } = useOrganization();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -130,10 +135,12 @@ export default function OrganizationsPage() {
         { label: "Organizations" },
       ]}
       actions={
-        <Button onClick={() => setShowCreateModal(true)}>
-          <PlusCircle size={18} />
-          <span className="hidden sm:inline">New Organization</span>
-        </Button>
+        isAdmin ? (
+          <Button onClick={() => setShowCreateModal(true)}>
+            <PlusCircle size={18} />
+            <span className="hidden sm:inline">New Organization</span>
+          </Button>
+        ) : undefined
       }
     >
       {/* Search */}
@@ -174,7 +181,7 @@ export default function OrganizationsPage() {
                 ? "Create your first organization to manage client clusters."
                 : "Try adjusting your search terms."}
             </p>
-            {organizations.length === 0 && (
+            {organizations.length === 0 && isAdmin && (
               <Button className="mt-4" onClick={() => setShowCreateModal(true)}>
                 Create Organization
               </Button>
