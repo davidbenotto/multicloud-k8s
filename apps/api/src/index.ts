@@ -11,6 +11,7 @@ import {
   validateSession,
   logout,
 } from "./services/auth";
+import { requireAuth, requireAdmin } from "./middleware/auth";
 import morgan from "morgan";
 import { env } from "./utils/validate-env";
 import { logger } from "./utils/logger";
@@ -19,7 +20,7 @@ const app = express();
 const PORT = env.PORT;
 const FRONTEND_URL = env.FRONTEND_URL;
 
-// Admin emails that can access all organizations
+// Admin emails that can access all organizations (legacy, now using IAM-based roles)
 const ADMIN_EMAILS = (env.ADMIN_EMAILS || "").split(",").filter(Boolean);
 
 app.use(helmet());
@@ -37,12 +38,22 @@ app.use(
 );
 app.use(express.json());
 
-// Helper: Get organization context from request
+// Helper: Get organization context from authenticated session or headers (backward compatible)
 const getOrgContext = (req: express.Request) => {
+  // Prefer authenticated session if available
+  if (req.session) {
+    return {
+      orgId: req.session.organizationId,
+      userId: req.session.cloudIdentity,
+      isAdmin: req.session.isAdmin,
+      role: req.session.role,
+    };
+  }
+  // Fallback to headers for backward compatibility
   const orgId = req.headers["x-organization-id"] as string;
   const userId = req.headers["x-user-id"] as string;
   const isAdmin = req.headers["x-admin-mode"] === "true";
-  return { orgId, userId, isAdmin };
+  return { orgId, userId, isAdmin, role: isAdmin ? "admin" : "viewer" };
 };
 
 logger.info(
@@ -102,6 +113,7 @@ app.get("/auth/session", async (req, res) => {
         organization: org,
         cloudProvider: session.cloudProvider,
         cloudIdentity: session.cloudIdentity,
+        role: session.role,
         isAdmin: session.isAdmin,
       },
     });
@@ -175,8 +187,8 @@ app.get("/organizations/:id", async (req, res) => {
   }
 });
 
-// Create organization
-app.post("/organizations", async (req, res) => {
+// Create organization (admin only)
+app.post("/organizations", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, slug, description } = req.body;
 
@@ -200,8 +212,8 @@ app.post("/organizations", async (req, res) => {
   }
 });
 
-// Update organization
-app.put("/organizations/:id", async (req, res) => {
+// Update organization (admin only)
+app.put("/organizations/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, description, is_active } = req.body;
     const org = await organizationService.update(req.params.id, {
@@ -218,18 +230,23 @@ app.put("/organizations/:id", async (req, res) => {
   }
 });
 
-// Delete organization
-app.delete("/organizations/:id", async (req, res) => {
-  try {
-    await organizationService.delete(req.params.id);
-    res.json({ success: true });
-  } catch (error: any) {
-    logger.error("Error deleting organization:", error);
-    res
-      .status(400)
-      .json({ error: error.message || "Failed to delete organization" });
-  }
-});
+// Delete organization (admin only)
+app.delete(
+  "/organizations/:id",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      await organizationService.delete(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      logger.error("Error deleting organization:", error);
+      res
+        .status(400)
+        .json({ error: error.message || "Failed to delete organization" });
+    }
+  },
+);
 
 // --- Credential Routes (with organization context) ---
 
@@ -257,36 +274,49 @@ app.get("/credentials", async (req, res) => {
   }
 });
 
-// Connect credentials for org
-app.post("/credentials/:provider/connect", async (req, res) => {
-  const { orgId } = getOrgContext(req);
-  const { connection_name, ...credentialData } = req.body;
+// Connect credentials for org (admin only)
+app.post(
+  "/credentials/:provider/connect",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const { orgId } = getOrgContext(req);
+    const { connection_name, ...credentialData } = req.body;
 
-  try {
-    const result = await credentialService.saveCredentials(
-      req.params.provider,
-      credentialData,
-      orgId || undefined,
-      connection_name,
-    );
-    res.json(result);
-  } catch (error: any) {
-    res
-      .status(500)
-      .json({ error: error.message || "Failed to save credentials" });
-  }
-});
+    try {
+      const result = await credentialService.saveCredentials(
+        req.params.provider,
+        credentialData,
+        orgId || undefined,
+        connection_name,
+      );
+      res.json(result);
+    } catch (error: any) {
+      res
+        .status(500)
+        .json({ error: error.message || "Failed to save credentials" });
+    }
+  },
+);
 
-// Disconnect credentials for org
-app.post("/credentials/:provider/disconnect", async (req, res) => {
-  const { orgId } = getOrgContext(req);
-  try {
-    await credentialService.disconnect(req.params.provider, orgId || undefined);
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(400).json({ error: error.message });
-  }
-});
+// Disconnect credentials for org (admin only)
+app.post(
+  "/credentials/:provider/disconnect",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const { orgId } = getOrgContext(req);
+    try {
+      await credentialService.disconnect(
+        req.params.provider,
+        orgId || undefined,
+      );
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  },
+);
 
 app.get("/health", async (req, res) => {
   const dbHealth = await db.healthCheck();
@@ -345,8 +375,8 @@ app.get("/clusters", async (req, res) => {
   }
 });
 
-// Create new cluster (with organization assignment)
-app.post("/clusters", async (req, res) => {
+// Create new cluster (admin only)
+app.post("/clusters", requireAuth, requireAdmin, async (req, res) => {
   const config = req.body;
   const { orgId, isAdmin } = getOrgContext(req);
 
@@ -454,8 +484,8 @@ app.get("/clusters/:id/kubeconfig", async (req, res) => {
   }
 });
 
-// Delete Cluster (with organization verification)
-app.delete("/clusters/:id", async (req, res) => {
+// Delete Cluster (admin only)
+app.delete("/clusters/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { orgId, isAdmin } = getOrgContext(req);
 

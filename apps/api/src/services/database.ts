@@ -85,6 +85,7 @@ export const db = {
         cloud_provider VARCHAR(50) NOT NULL,
         cloud_identity VARCHAR(255) NOT NULL,
         cloud_account_id VARCHAR(255) NOT NULL,
+        cloud_role VARCHAR(20) DEFAULT 'viewer', -- 'admin' or 'viewer' based on IAM permissions
         expires_at TIMESTAMP NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
@@ -134,6 +135,11 @@ export const db = {
         END;
         BEGIN
           ALTER TABLE organizations ADD COLUMN cloud_account_name VARCHAR(255);
+        EXCEPTION
+          WHEN duplicate_column THEN NULL;
+        END;
+        BEGIN
+          ALTER TABLE user_sessions ADD COLUMN cloud_role VARCHAR(20) DEFAULT 'viewer';
         EXCEPTION
           WHEN duplicate_column THEN NULL;
         END;

@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
+export type UserRole = "admin" | "viewer";
+
 interface SessionInfo {
   organizationId: string;
   organization: {
@@ -12,6 +14,7 @@ interface SessionInfo {
   };
   cloudProvider: string;
   cloudIdentity: string;
+  role: UserRole;
   isAdmin: boolean;
 }
 
@@ -21,6 +24,9 @@ interface AuthContextType {
   login: (sessionToken: string) => Promise<void>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
+  isAdmin: boolean;
+  isViewer: boolean;
+  role: UserRole | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -91,6 +97,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/login");
   };
 
+  // Computed role properties
+  const role = session?.role || null;
+  const isAdmin = session?.isAdmin || session?.role === "admin" || false;
+  const isViewer = session?.role === "viewer" || false;
+
   return (
     <AuthContext.Provider
       value={{
@@ -99,6 +110,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         isAuthenticated: !!session,
+        isAdmin,
+        isViewer,
+        role,
       }}
     >
       {children}

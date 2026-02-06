@@ -14,12 +14,15 @@ import {
   User,
   LogOut,
   Building2,
+  Shield,
+  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui";
 import { OrgSelector } from "@/components/OrgSelector";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { AdminOnly } from "@/components/RoleGuard";
 
 const navigation = [
   { href: "/", label: "Dashboard", icon: LayoutGrid },
@@ -32,8 +35,8 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const { isAdmin } = useOrganization();
-  const { session, logout } = useAuth();
+  const { isAdmin: orgIsAdmin } = useOrganization();
+  const { session, logout, isAdmin, isViewer, role } = useAuth();
 
   const handleLogout = async () => {
     await logout();
@@ -137,29 +140,31 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Create Button */}
-      <div className="p-3 border-t border-border">
-        <Link href="/clusters/new">
-          <Button
-            variant="primary"
-            className={cn("w-full", collapsed && "px-0")}
-          >
-            <PlusCircle size={18} />
-            <AnimatePresence mode="wait">
-              {!collapsed && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: "auto" }}
-                  exit={{ opacity: 0, width: 0 }}
-                  className="text-sm font-medium"
-                >
-                  New Cluster
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </Button>
-        </Link>
-      </div>
+      {/* Create Button (admin only) */}
+      <AdminOnly>
+        <div className="p-3 border-t border-border">
+          <Link href="/clusters/new">
+            <Button
+              variant="primary"
+              className={cn("w-full", collapsed && "px-0")}
+            >
+              <PlusCircle size={18} />
+              <AnimatePresence mode="wait">
+                {!collapsed && (
+                  <motion.span
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: "auto" }}
+                    exit={{ opacity: 0, width: 0 }}
+                    className="text-sm font-medium"
+                  >
+                    New Cluster
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </Button>
+          </Link>
+        </div>
+      </AdminOnly>
 
       {/* User Profile Section */}
       <div className="border-t border-border p-3">
@@ -180,10 +185,21 @@ export function Sidebar() {
                   <p className="text-sm font-medium truncate">
                     {session?.cloudIdentity || "Not authenticated"}
                   </p>
-                  <p className="text-xs text-muted-foreground capitalize">
-                    {session?.cloudProvider || ""}
-                    {session?.isAdmin && " • Admin"}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground capitalize">
+                      {session?.cloudProvider || ""}
+                    </span>
+                    {isAdmin && (
+                      <span className="inline-flex items-center gap-0.5 text-xs text-emerald-500">
+                        <Shield size={10} /> Admin
+                      </span>
+                    )}
+                    {isViewer && (
+                      <span className="inline-flex items-center gap-0.5 text-xs text-amber-500">
+                        <Eye size={10} /> Viewer
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

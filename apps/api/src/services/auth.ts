@@ -1,12 +1,21 @@
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
-import { IAMClient, ListAccountAliasesCommand } from "@aws-sdk/client-iam";
+import {
+  IAMClient,
+  ListAccountAliasesCommand,
+  SimulatePrincipalPolicyCommand,
+} from "@aws-sdk/client-iam";
 import { ClientSecretCredential } from "@azure/identity";
+import { ResourceManagementClient } from "@azure/arm-resources";
+import { AuthorizationManagementClient } from "@azure/arm-authorization";
 import { GoogleAuth } from "google-auth-library";
 import { randomBytes } from "crypto";
 import { db } from "./database";
 
 // Session duration: 24 hours
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+
+// User role based on cloud IAM permissions
+export type UserRole = "admin" | "viewer";
 
 export interface CloudCredentials {
   provider: "aws" | "azure" | "gcp";
@@ -17,6 +26,7 @@ export interface CloudCredentials {
   tenantId?: string;
   clientId?: string;
   clientSecret?: string;
+  subscriptionId?: string; // Needed for role assignment check
   // GCP
   serviceAccountKey?: string;
 }
@@ -28,6 +38,7 @@ export interface CloudIdentity {
   projectId?: string;
   username: string;
   accountName: string;
+  role: UserRole; // Detected from cloud IAM
 }
 
 export interface SessionInfo {
@@ -40,6 +51,7 @@ export interface SessionInfo {
   user: {
     name: string;
     provider: string;
+    role: UserRole;
   };
   expiresAt: Date;
 }
@@ -51,27 +63,23 @@ async function validateAWSCredentials(
   credentials: CloudCredentials,
 ): Promise<CloudIdentity> {
   try {
-    const stsClient = new STSClient({
-      credentials: {
-        accessKeyId: credentials.accessKeyId!,
-        secretAccessKey: credentials.secretAccessKey!,
-      },
-    });
+    const awsCredentials = {
+      accessKeyId: credentials.accessKeyId!,
+      secretAccessKey: credentials.secretAccessKey!,
+    };
 
+    const stsClient = new STSClient({ credentials: awsCredentials });
     const identity = await stsClient.send(new GetCallerIdentityCommand({}));
 
     // Extract account ID
     const accountId = identity.Account!;
+    const userArn = identity.Arn!;
 
     // Try to get friendly account alias
     let accountName = `AWS-${accountId}`;
+    const iamClient = new IAMClient({ credentials: awsCredentials });
+
     try {
-      const iamClient = new IAMClient({
-        credentials: {
-          accessKeyId: credentials.accessKeyId!,
-          secretAccessKey: credentials.secretAccessKey!,
-        },
-      });
       const aliases = await iamClient.send(new ListAccountAliasesCommand({}));
       if (aliases.AccountAliases && aliases.AccountAliases.length > 0) {
         accountName = aliases.AccountAliases[0];
@@ -80,14 +88,44 @@ async function validateAWSCredentials(
       // IAM access might not be available, use default name
     }
 
+    // Detect role: Check if user can create/delete EKS clusters
+    let role: UserRole = "viewer";
+    try {
+      const eksAdminActions = [
+        "eks:CreateCluster",
+        "eks:DeleteCluster",
+        "eks:UpdateClusterConfig",
+      ];
+
+      const simulation = await iamClient.send(
+        new SimulatePrincipalPolicyCommand({
+          PolicySourceArn: userArn,
+          ActionNames: eksAdminActions,
+        }),
+      );
+
+      // If all actions are allowed, user is admin
+      const allAllowed = simulation.EvaluationResults?.every(
+        (result) => result.EvalDecision === "allowed",
+      );
+
+      if (allAllowed) {
+        role = "admin";
+      }
+    } catch (error) {
+      // If simulation fails (no permission to simulate), default to viewer
+      console.log("IAM simulation not available, defaulting to viewer role");
+    }
+
     // Extract username from ARN
-    const username = identity.Arn?.split("/").pop() || "aws-user";
+    const username = userArn.split("/").pop() || "aws-user";
 
     return {
       provider: "aws",
       accountId,
       username,
       accountName,
+      role,
     };
   } catch (error) {
     throw new Error(
@@ -122,11 +160,55 @@ async function validateAzureCredentials(
     const accountName = `Azure-${tenantId.substring(0, 8)}`;
     const username = credentials.clientId!;
 
+    // Detect role: Check role assignments if subscription ID is provided
+    let role: UserRole = "viewer";
+
+    if (credentials.subscriptionId) {
+      try {
+        const authClient = new AuthorizationManagementClient(
+          credential,
+          credentials.subscriptionId,
+        );
+
+        // List role assignments for the service principal
+        const assignments = authClient.roleAssignments.listForSubscription();
+
+        // Admin roles in Azure
+        const adminRoleNames = ["Owner", "Contributor"];
+
+        for await (const assignment of assignments) {
+          // Get the role definition to check the name
+          if (assignment.principalId === credentials.clientId) {
+            // Check if role definition contains admin permissions
+            const roleDefId = assignment.roleDefinitionId?.split("/").pop();
+            if (roleDefId) {
+              const roleDef = await authClient.roleDefinitions.getById(
+                assignment.roleDefinitionId!,
+              );
+              if (
+                roleDef.roleName &&
+                adminRoleNames.includes(roleDef.roleName)
+              ) {
+                role = "admin";
+                break;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // If role check fails, default to viewer
+        console.log(
+          "Azure role check not available, defaulting to viewer role",
+        );
+      }
+    }
+
     return {
       provider: "azure",
       tenantId,
       username,
       accountName,
+      role,
     };
   } catch (error) {
     throw new Error(
@@ -150,17 +232,57 @@ async function validateGCPCredentials(
     });
 
     // Get auth client to validate
-    await auth.getClient();
+    const client = await auth.getClient();
 
     const projectId = serviceAccountKey.project_id;
     const username = serviceAccountKey.client_email || "gcp-user";
     const accountName = `GCP-${projectId}`;
+
+    // Detect role: Check if service account can create/delete GKE clusters
+    let role: UserRole = "viewer";
+
+    try {
+      // Use the Cloud Resource Manager API to test IAM permissions
+      const accessToken = await client.getAccessToken();
+
+      const adminPermissions = [
+        "container.clusters.create",
+        "container.clusters.delete",
+        "container.clusters.update",
+      ];
+
+      const response = await fetch(
+        `https://cloudresourcemanager.googleapis.com/v1/projects/${projectId}:testIamPermissions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken.token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ permissions: adminPermissions }),
+        },
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        // If all admin permissions are granted, user is admin
+        if (data.permissions?.length === adminPermissions.length) {
+          role = "admin";
+        }
+      }
+    } catch (error) {
+      // If permission check fails, default to viewer
+      console.log(
+        "GCP permission check not available, defaulting to viewer role",
+      );
+    }
 
     return {
       provider: "gcp",
       projectId,
       username,
       accountName,
+      role,
     };
   } catch (error) {
     throw new Error(
@@ -238,14 +360,15 @@ async function createSession(
 
   await db.query(
     `INSERT INTO user_sessions 
-     (session_token, organization_id, cloud_provider, cloud_identity, cloud_account_id, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+     (session_token, organization_id, cloud_provider, cloud_identity, cloud_account_id, cloud_role, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
       sessionToken,
       organizationId,
       identity.provider,
       identity.username,
       accountId,
+      identity.role,
       expiresAt,
     ],
   );
@@ -285,6 +408,7 @@ export async function loginWithCloudCredentials(
     user: {
       name: identity.username,
       provider: identity.provider,
+      role: identity.role,
     },
     expiresAt: new Date(Date.now() + SESSION_DURATION_MS),
   };
@@ -299,10 +423,11 @@ export async function validateSession(sessionToken: string): Promise<{
   cloudProvider: string;
   cloudIdentity: string;
   cloudAccountId: string;
+  role: UserRole;
   isAdmin: boolean;
 } | null> {
   const result = await db.query(
-    `SELECT id, organization_id, cloud_provider, cloud_identity, cloud_account_id 
+    `SELECT id, organization_id, cloud_provider, cloud_identity, cloud_account_id, cloud_role 
      FROM user_sessions 
      WHERE session_token = $1 AND expires_at > NOW()`,
     [sessionToken],
@@ -313,12 +438,7 @@ export async function validateSession(sessionToken: string): Promise<{
   }
 
   const session = result.rows[0];
-
-  // Determine if admin based on cloud account whitelist
-  const isAdmin = isAdminCloudAccount(
-    session.cloud_provider,
-    session.cloud_account_id,
-  );
+  const role: UserRole = session.cloud_role || "viewer";
 
   return {
     sessionId: session.id,
@@ -326,7 +446,8 @@ export async function validateSession(sessionToken: string): Promise<{
     cloudProvider: session.cloud_provider,
     cloudIdentity: session.cloud_identity,
     cloudAccountId: session.cloud_account_id,
-    isAdmin,
+    role,
+    isAdmin: role === "admin",
   };
 }
 
